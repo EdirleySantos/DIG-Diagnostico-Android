@@ -44,10 +44,15 @@ public class CalculatorActivity extends Activity {
     private void press(String key){
         if("C".equals(key)){ expression.setText(""); result.setText("0"); justCalculated=false; return; }
         if("<-".equals(key)){ String s=expression.getText().toString(); if(!s.isEmpty()) expression.setText(s.substring(0,s.length()-1)); return; }
-        if("=".equals(key)){ if(justCalculated||expression.getText().toString().trim().isEmpty()){result.setText("0");justCalculated=false;}else calculate(); return; }
-        if(justCalculated){result.setText("0");justCalculated=false;}
+        if("=".equals(key)){ if(expression.getText().toString().trim().isEmpty()) return; calculate(); return; }
+        if(justCalculated){
+            if(isOperator(key)) expression.setText(result.getText().toString());
+            else result.setText("0");
+            justCalculated=false;
+        }
         expression.append("pi".equals(key)?String.valueOf(Math.PI):key);
     }
+    private boolean isOperator(String key){return key.length()==1&&"+-*/".contains(key);}
     private void calculate(){
         try { String source=expression.getText().toString(); double value=new ExpressionBuilder(source).build().evaluate(); String answer=Math.rint(value)==value?String.valueOf((long)value):String.format(java.util.Locale.ROOT,"%.8f",value).replaceAll("0+$",""); result.setText(answer); expression.setText(""); justCalculated=true; String old=getSharedPreferences("dig_calculator",MODE_PRIVATE).getString("calc_history",""); String next=source+" = "+answer+"\n"+old; if(next.length()>800)next=next.substring(0,800); getSharedPreferences("dig_calculator",MODE_PRIVATE).edit().putString("calc_history",next).apply(); history.setText(next); }
         catch(Exception e){ result.setText("Calculo invalido"); }
