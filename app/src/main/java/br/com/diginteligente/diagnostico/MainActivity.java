@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         try {
+            migrateCalculatorAndCleanGames();
             buildScreen();
             registerDownloadReceiver();
             recordDailySnapshot();
@@ -81,6 +82,15 @@ public class MainActivity extends Activity {
         } catch (Exception error) {
             showStartupRecovery(error);
         }
+    }
+
+    private void migrateCalculatorAndCleanGames() {
+        android.content.SharedPreferences old = getSharedPreferences("dig_games", MODE_PRIVATE);
+        android.content.SharedPreferences calculator = getSharedPreferences("dig_calculator", MODE_PRIVATE);
+        if (!calculator.contains("calc_history") && old.contains("calc_history")) {
+            calculator.edit().putString("calc_history", old.getString("calc_history", "")).apply();
+        }
+        old.edit().clear().apply();
     }
 
     private void showStartupRecovery(Exception error) {
@@ -172,7 +182,7 @@ public class MainActivity extends Activity {
         addAction("Analisar aplicativos agora", v -> analyzeApps());
         addAction("Analisar pasta, SD ou USB", v -> chooseFolder());
         addAction("Verificar seguranca", v -> analyzeSecurity());
-        addAction("Jogos e calculadora", v -> startActivity(new Intent(this, GameHubActivity.class)));
+        addAction("Abrir calculadora", v -> startActivity(new Intent(this, CalculatorActivity.class)));
         addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
         addSecondaryAction("Ver historico e tendencias", v -> showHistory());
         addSecondaryAction("Verificar atualizacoes", v -> checkForUpdates(true));
