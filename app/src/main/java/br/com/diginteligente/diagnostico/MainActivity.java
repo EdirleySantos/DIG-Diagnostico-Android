@@ -11,6 +11,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -42,8 +43,10 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.text.SimpleDateFormat;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -58,6 +61,8 @@ public class MainActivity extends Activity {
     private static final long DAY = 24L * 60L * 60L * 1000L;
     private static final long LARGE_FILE = 50L * 1024L * 1024L;
     private static final String RELEASE_API = "https://api.github.com/repos/EdirleySantos/DIG-Diagnostico-Android/releases/latest";
+    private static final String PREFS = "dig_local_intelligence";
+    private static final String HISTORY_KEY = "health_history";
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout content;
     private TextView status;
@@ -70,6 +75,7 @@ public class MainActivity extends Activity {
         super.onCreate(state);
         buildScreen();
         registerDownloadReceiver();
+        recordDailySnapshot();
         showOverview();
     }
 
@@ -139,8 +145,102 @@ public class MainActivity extends Activity {
         addAction("Analisar pasta, SD ou USB", v -> chooseFolder());
         addAction("Verificar seguranca", v -> analyzeSecurity());
         addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
+        addSecondaryAction("Ver historico e tendencias", v -> showHistory());
         addSecondaryAction("Verificar atualizacoes", v -> checkForUpdates(true));
+        addLearnedRecommendations(freePercent);
         checkForUpdates(false);
+    }
+
+    private void recordDailySnapshot() {
+        SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        JSONArray history;
+        try { history = new JSONArray(prefs.getString(HISTORY_KEY, "[]")); }
+        catch (Exception ignored) { history = new JSONArray(); }
+        String today = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(new Date());
+        try {
+            if (history.length() > 0 && today.equals(history.getJSONObject(history.length() - 1).optString("date"))) return;
+            StatFs fs = new StatFs(Environment.getDataDirectory().getPath());
+            ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+            ((ActivityManager) getSystemService(ACTIVITY_SERVICE)).getMemoryInfo(memory);
+            JSONObject item = new JSONObject();
+            item.put("date", today);
+            item.put("freeStorage", fs.getAvailableBytes());
+            item.put("totalStorage", fs.getTotalBytes());
+            item.put("freeMemory", memory.availMem);
+            item.put("totalMemory", memory.totalMem);
+            item.put("apps", getPackageManager().getInstalledApplications(0).size());
+            item.put("digCache", folderSize(getCacheDir()) + folderSize(getCodeCacheDir()) + folderSize(getExternalCacheDir()));
+            history.put(item);
+            JSONArray trimmed = new JSONArray();
+            int start = Math.max(0, history.length() - 60);
+            for (int i = start; i < history.length(); i++) trimmed.put(history.getJSONObject(i));
+            prefs.edit().putString(HISTORY_KEY, trimmed.toString()).apply();
+        } catch (Exception ignored) { }
+    }
+
+    private JSONArray loadHistory() {
+        try { return new JSONArray(getSharedPreferences(PREFS, MODE_PRIVATE).getString(HISTORY_KEY, "[]")); }
+        catch (Exception ignored) { return new JSONArray(); }
+    }
+
+    private void addLearnedRecommendations(int freePercent) {
+        JSONArray history = loadHistory();
+        if (history.length() < 2) {
+            addInfo("Aprendizado local iniciado. A partir dos proximos dias, o DIG mostrara tendencias de armazenamento e memoria.");
+            return;
+        }
+        try {
+            JSONObject first = history.getJSONObject(0);
+            JSONObject last = history.getJSONObject(history.length() - 1);
+            long consumed = first.optLong("freeStorage") - last.optLong("freeStorage");
+            int days = Math.max(1, history.length() - 1);
+            long daily = consumed / days;
+            if (daily > 20L * 1024L * 1024L) {
+                long free = last.optLong("freeStorage");
+                long remainingDays = daily == 0 ? 0 : free / daily;
+                addWarning("Tendencia detectada: o armazenamento esta crescendo cerca de " + format(daily) + " por dia. Mantido esse ritmo, o espaco pode ficar baixo em aproximadamente " + remainingDays + " dias.");
+            } else if (consumed < -50L * 1024L * 1024L) {
+                addInfo("Tendencia positiva: o aparelho ganhou " + format(-consumed) + " de espaco desde a primeira medicao.");
+            } else {
+                addInfo("O uso do armazenamento esta estavel nas ultimas " + history.length() + " medicoes.");
+            }
+            int appChange = last.optInt("apps") - first.optInt("apps");
+            if (appChange >= 5) addWarning(appChange + " aplicativos foram adicionados desde o inicio do historico. Revise os que nao estiver usando.");
+        } catch (Exception ignored) { }
+    }
+
+    private void showHistory() {
+        clear("Historico local");
+        JSONArray history = loadHistory();
+        addInfo("As medicoes ficam somente neste aparelho e nao incluem nomes de arquivos, fotos, contatos ou mensagens.");
+        if (history.length() == 0) {
+            addInfo("Ainda nao existem medicoes salvas.");
+            return;
+        }
+        for (int i = history.length() - 1; i >= Math.max(0, history.length() - 15); i--) {
+            try {
+                JSONObject item = history.getJSONObject(i);
+                long total = item.optLong("totalStorage");
+                long free = item.optLong("freeStorage");
+                int percent = total == 0 ? 0 : (int) (free * 100L / total);
+                content.addView(card(formatDate(item.optString("date")), percent + "% livre | " + item.optInt("apps") + " apps | RAM livre " + format(item.optLong("freeMemory"))));
+            } catch (Exception ignored) { }
+        }
+        addSecondaryAction("Apagar historico local", v -> new AlertDialog.Builder(this)
+                .setTitle("Apagar aprendizado local?")
+                .setMessage("Todas as medicoes e tendencias deste aparelho serao removidas.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Apagar", (d, w) -> {
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(HISTORY_KEY).apply();
+                    showHistory();
+                }).show());
+    }
+
+    private String formatDate(String iso) {
+        try {
+            Date date = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(iso);
+            return new SimpleDateFormat("dd/MM/yyyy", new Locale("pt", "BR")).format(date);
+        } catch (Exception ignored) { return iso; }
     }
 
     private void showCleaner() {
