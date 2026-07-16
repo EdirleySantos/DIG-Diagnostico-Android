@@ -10,7 +10,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace 'br.com.diginteligente.diagnostico'
-    compileSdk 35
+    compileSdk 36
 
     buildFeatures {
         buildConfig true
@@ -20,8 +20,8 @@ android {
         applicationId 'br.com.diginteligente.diagnostico'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '1.4.0'
+        versionCode 6
+        versionName '1.5.0'
     }
 
     signingConfigs {
@@ -47,4 +47,9 @@ android {
 dependencies {
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation 'net.objecthunter:exp4j:0.4.8'
+    implementation 'com.badlogicgames.gdx:gdx:1.14.2'
+    implementation 'com.badlogicgames.gdx:gdx-backend-android:1.14.2'
+    runtimeOnly 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-arm64-v8a'
+    runtimeOnly 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-armeabi-v7a'
+    runtimeOnly 'com.badlogicgames.gdx:gdx-platform:1.14.2:natives-x86_64'
 }

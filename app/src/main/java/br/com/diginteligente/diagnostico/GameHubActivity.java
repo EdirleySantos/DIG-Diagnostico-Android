@@ -53,6 +53,7 @@ public class GameHubActivity extends Activity {
         addGame("Calculadora inteligente", "Cientifica, historico e explicacao", CalculatorActivity.class, Color.rgb(8, 126, 109));
         addGame("Jogo da velha", "Dois jogadores ou maquina adaptativa", TicTacToeActivity.class, Color.rgb(198, 72, 73));
         addGame("Campeonato de corrida", "10 participantes, 3 pistas e pontuacao", RaceActivity.class, Color.rgb(42, 92, 155));
+        addGame("Arena 4D experimental", "Camera, profundidade, luz e 10 carros", FourDArenaActivity.class, Color.rgb(97, 61, 136));
         addTableGame("General de dados", "Cinco dados, tres jogadas e cinco etapas", "dice", Color.rgb(112, 73, 146));
         addTableGame("Blackjack", "Mesa contra a banca e nivel progressivo", "blackjack", Color.rgb(43, 112, 74));
         addLocked("Paciencia 3D", "Cartas, movimentos e desafios por etapas");
