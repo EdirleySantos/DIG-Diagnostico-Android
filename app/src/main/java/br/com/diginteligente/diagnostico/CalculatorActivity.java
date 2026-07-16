@@ -127,9 +127,14 @@ public class CalculatorActivity extends Activity {
 
     private void showInterestTool() {
         EditText principal = input("Valor inicial (R$)");
+        EditText totalField = input("Valor final (R$)");
         EditText rate = input("Juros por periodo (%)");
         EditText periods = input("Quantidade de periodos/parcelas");
         final boolean[] compound = {true};
+        Spinner target = spinner(new String[]{"Descobrir valor final", "Descobrir valor original",
+                "Descobrir taxa de juros", "Descobrir parcelas ou periodos"});
+        toolPanel.addView(sectionLabel("QUERO DESCOBRIR"));
+        toolPanel.addView(target, matchHeight(54));
         toolPanel.addView(sectionLabel("TIPO DE JUROS"));
         LinearLayout modes = row();
         Button compoundButton = actionButton("Compostos", PURPLE);
@@ -140,9 +145,15 @@ public class CalculatorActivity extends Activity {
         toolPanel.addView(modes, matchWrap());
         compoundButton.setOnClickListener(v -> { compound[0] = true; styleModeButton(compoundButton, true); styleModeButton(simpleButton, false); });
         simpleButton.setOnClickListener(v -> { compound[0] = false; styleModeButton(compoundButton, false); styleModeButton(simpleButton, true); });
-        addLabeledField("VALOR INICIAL", principal);
+        addLabeledField("VALOR ORIGINAL", principal);
+        addLabeledField("VALOR FINAL", totalField);
         addLabeledField("TAXA POR PARCELA OU PERIODO", rate);
         addLabeledField("NUMERO DE PARCELAS OU PERIODOS", periods);
+        EditText[] financeFields = {totalField, principal, rate, periods};
+        target.setOnItemSelectedListener(new SimpleItemSelectedListener(position -> {
+            for (int index = 0; index < financeFields.length; index++) setCalculatedField(financeFields[index], index == position);
+        }));
+        setCalculatedField(totalField, true);
         Button calculate = actionButton("Calcular", 0xff45b978);
         LinearLayout.LayoutParams calculateLp = matchHeight(56); calculateLp.setMargins(0, dp(10), 0, 0);
         toolPanel.addView(calculate, calculateLp);
@@ -154,9 +165,11 @@ public class CalculatorActivity extends Activity {
         toolPanel.addView(summary, summaryLp);
         TextView summaryTitle = label("RESUMO DO CALCULO", 13, PURPLE);
         summaryTitle.setTypeface(null, android.graphics.Typeface.BOLD); summary.addView(summaryTitle);
-        TextView initialValue = summaryLine(summary, "Valor inicial", 0xff62a8e5);
+        TextView initialValue = summaryLine(summary, "Valor original", 0xff62a8e5);
         TextView interestValue = summaryLine(summary, "Juros acumulados", 0xffffa45b);
-        TextView totalValue = summaryLine(summary, "Total a pagar", 0xffd84f68);
+        TextView totalValue = summaryLine(summary, "Valor final", 0xffd84f68);
+        TextView rateValue = summaryLine(summary, "Taxa por periodo", PURPLE);
+        TextView periodsValue = summaryLine(summary, "Periodos calculados", TEAL);
         TextView installmentValue = summaryLine(summary, "Valor de cada parcela", 0xff45b978);
         TextView explanation = label("", 13, 0xff52636a);
         explanation.setPadding(dp(4), dp(8), dp(4), dp(4)); summary.addView(explanation);
@@ -167,21 +180,34 @@ public class CalculatorActivity extends Activity {
         useTotal.setOnClickListener(v -> useHistoryValue(calculatedTotal[0]));
         calculate.setOnClickListener(v -> {
             try {
-                double p = number(principal);
-                double i = number(rate) / 100d;
-                int n = (int) number(periods);
-                if (p < 0 || i < 0 || n < 1) throw new IllegalArgumentException();
-                double total = compound[0] ? p * Math.pow(1 + i, n) : p * (1 + i * n);
+                int wanted = target.getSelectedItemPosition();
+                double p = wanted == 1 ? Double.NaN : number(principal);
+                double total = wanted == 0 ? Double.NaN : number(totalField);
+                double i = wanted == 2 ? Double.NaN : number(rate) / 100d;
+                double n = wanted == 3 ? Double.NaN : number(periods);
+                if (wanted == 0) total = compound[0] ? p * Math.pow(1 + i, n) : p * (1 + i * n);
+                else if (wanted == 1) p = compound[0] ? total / Math.pow(1 + i, n) : total / (1 + i * n);
+                else if (wanted == 2) i = compound[0] ? Math.pow(total / p, 1d / n) - 1d : (total / p - 1d) / n;
+                else n = compound[0] ? Math.log(total / p) / Math.log(1 + i) : (total / p - 1d) / i;
+                if (!Double.isFinite(p) || !Double.isFinite(total) || !Double.isFinite(i) || !Double.isFinite(n)
+                        || p <= 0 || total <= 0 || i < 0 || n <= 0) throw new IllegalArgumentException();
                 double interest = total - p;
+                if (interest < -0.0000001) throw new IllegalArgumentException();
                 String name = compound[0] ? "Juros compostos" : "Juros simples";
                 String raw = decimal(total);
                 initialValue.setText(money(p)); interestValue.setText(money(interest));
-                totalValue.setText(money(total)); installmentValue.setText(n + "x de " + money(total / n));
-                explanation.setText("Taxa de " + decimal(i * 100) + "% por periodo. " + (compound[0]
+                totalValue.setText(money(total)); rateValue.setText(decimal(i * 100) + "%");
+                periodsValue.setText(decimal(n));
+                int parcelCount = Math.max(1, (int) Math.ceil(n));
+                installmentValue.setText(parcelCount + "x de " + money(total / parcelCount));
+                principal.setText(decimal(p)); totalField.setText(decimal(total));
+                rate.setText(decimal(i * 100)); periods.setText(decimal(n));
+                explanation.setText("Resultado com taxa de " + decimal(i * 100) + "% por periodo. " + (compound[0]
                         ? "Os juros incidem sobre o saldo acumulado." : "Os juros incidem somente sobre o valor inicial."));
                 calculatedTotal[0] = raw; summary.setVisibility(View.VISIBLE);
                 result.setText(raw); expression.setText(""); justCalculated = true;
-                addHistory(name + ": " + money(p) + " -> " + money(total) + " (" + n + "x)", raw);
+                addHistory(name + ": " + money(p) + " -> " + money(total) + " | "
+                        + decimal(i * 100) + "% | " + decimal(n) + " periodos", raw);
             } catch (Exception e) { invalidFields(); }
         });
     }
@@ -451,6 +477,13 @@ public class CalculatorActivity extends Activity {
     }
 
     private void addField(EditText field) { LinearLayout.LayoutParams lp = matchHeight(56); lp.setMargins(0, dp(6), 0, 0); toolPanel.addView(field, lp); }
+    private void setCalculatedField(EditText field, boolean calculated) {
+        field.setEnabled(!calculated);
+        field.setAlpha(calculated ? 0.65f : 1f);
+        field.setBackground(round(calculated ? 0xffe6e1e9 : Color.WHITE, 10));
+        field.setHint(calculated ? "Calculado automaticamente" : String.valueOf(field.getTag()));
+    }
+
     private void addLabeledField(String text, EditText field) {
         toolPanel.addView(sectionLabel(text));
         toolPanel.addView(field, matchHeight(56));
@@ -479,8 +512,9 @@ public class CalculatorActivity extends Activity {
         button.setElevation(selected ? dp(7) : dp(2));
     }
     private EditText input(String hint) {
-        EditText field = new EditText(this); field.setHint(hint); field.setTextSize(17);
+        EditText field = new EditText(this); field.setHint(hint); field.setTag(hint); field.setTextSize(17);
         field.setSingleLine(true); field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED);
+        field.setKeyListener(android.text.method.DigitsKeyListener.getInstance("0123456789,.-"));
         field.setBackground(round(Color.WHITE, 10)); field.setPadding(dp(14), dp(8), dp(14), dp(8)); return field;
     }
     private Spinner spinner(String[] items) { Spinner spinner = new Spinner(this); spinner.setBackground(round(Color.WHITE, 10)); spinner.setPadding(dp(10), 0, dp(8), 0); setSpinnerItems(spinner, items); return spinner; }
