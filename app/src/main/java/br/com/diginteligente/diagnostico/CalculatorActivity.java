@@ -11,6 +11,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.GridLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import net.objecthunter.exp4j.ExpressionBuilder;
 
@@ -21,7 +22,8 @@ public class CalculatorActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(16), dp(20), dp(16), dp(14)); root.setBackgroundColor(Color.rgb(255,246,232));
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setBackgroundColor(Color.rgb(255,246,232));
+        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(16), dp(12), dp(16), dp(24)); root.setBackgroundColor(Color.rgb(255,246,232));
         TextView title = new TextView(this); title.setText("Calculadora inteligente"); title.setTextSize(27); title.setTextColor(Color.rgb(94,49,126)); title.setPadding(dp(4),0,0,dp(12)); root.addView(title);
         expression = new EditText(this); expression.setTextSize(24); expression.setHint("Digite um calculo"); expression.setInputType(InputType.TYPE_CLASS_TEXT); expression.setBackground(round(Color.WHITE,12)); expression.setPadding(dp(14),dp(10),dp(14),dp(10)); root.addView(expression);
         result = new TextView(this); result.setText("0"); result.setTextSize(38); result.setGravity(Gravity.END); result.setTextColor(Color.rgb(220,70,91)); result.setBackground(round(Color.rgb(255,226,232),12)); result.setPadding(dp(12),dp(12),dp(12),dp(12)); LinearLayout.LayoutParams resultLp=new LinearLayout.LayoutParams(-1,-2); resultLp.setMargins(0,dp(10),0,dp(10)); root.addView(result,resultLp);
@@ -32,7 +34,9 @@ public class CalculatorActivity extends Activity {
         TextView historyTitle=new TextView(this);historyTitle.setText("HISTORICO");historyTitle.setTextSize(12);historyTitle.setTextColor(0xff67417d);historyTitle.setPadding(dp(4),dp(14),0,dp(5));root.addView(historyTitle);
         history = new TextView(this); history.setTextSize(13); history.setTextColor(Color.DKGRAY); history.setPadding(dp(12),dp(10),dp(12),dp(10)); history.setBackground(round(Color.WHITE,10)); history.setText(getSharedPreferences("dig_games",MODE_PRIVATE).getString("calc_history","Historico vazio")); root.addView(history);
         Button clearHistory=new Button(this);clearHistory.setText("Apagar historico");clearHistory.setAllCaps(false);clearHistory.setTextColor(Color.WHITE);clearHistory.setBackground(round(0xffd84f68,10));clearHistory.setElevation(dp(5));clearHistory.setOnClickListener(v->confirmClearHistory());LinearLayout.LayoutParams clearLp=new LinearLayout.LayoutParams(-1,dp(52));clearLp.setMargins(0,dp(8),0,0);root.addView(clearHistory,clearLp);
-        setContentView(root);
+        scroll.addView(root,new ScrollView.LayoutParams(-1,-2));
+        scroll.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(0,insets.getSystemWindowInsetTop(),0,insets.getSystemWindowInsetBottom()+dp(10));return insets;});
+        setContentView(scroll);scroll.requestApplyInsets();
     }
 
     private void press(String key){
