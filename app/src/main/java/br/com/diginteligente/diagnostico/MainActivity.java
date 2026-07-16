@@ -56,7 +56,7 @@ import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class MainActivity extends Activity {
+public class MainActivity extends ImmersiveActivity {
     private static final int PICK_FOLDER = 1201;
     private static final long DAY = 24L * 60L * 60L * 1000L;
     private static final long LARGE_FILE = 50L * 1024L * 1024L;

@@ -18,7 +18,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-public class ChessActivity extends Activity {
+public class ChessActivity extends ImmersiveActivity {
     private Board board; private final Button[] cells=new Button[64]; private TextView status; private Square selected; private boolean vsCpu=true,ended;
     @Override protected void onCreate(Bundle b){super.onCreate(b);build();newGame();}
     private void build(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(8),dp(14),dp(8),dp(8));root.setBackgroundColor(0xffece8dc);TextView title=new TextView(this);title.setText("XADREZ");title.setTextSize(26);title.setTextColor(0xff31364b);root.addView(title);status=new TextView(this);status.setTextSize(15);status.setPadding(0,dp(5),0,dp(8));root.addView(status);GridLayout grid=new GridLayout(this);grid.setColumnCount(8);for(int i=0;i<64;i++){final int index=i;Button c=new Button(this);c.setTextSize(24);c.setPadding(0,0,0,0);c.setMinWidth(0);c.setMinimumWidth(0);c.setOnClickListener(v->tap(index));cells[i]=c;GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.width=0;lp.height=dp(45);lp.columnSpec=GridLayout.spec(i%8,1f);grid.addView(c,lp);}root.addView(grid);Button mode=new Button(this);mode.setText("Modo: contra a maquina");mode.setAllCaps(false);mode.setOnClickListener(v->{vsCpu=!vsCpu;mode.setText(vsCpu?"Modo: contra a maquina":"Modo: dois jogadores");newGame();});root.addView(mode);Button fresh=new Button(this);fresh.setText("Nova partida");fresh.setOnClickListener(v->newGame());root.addView(fresh);setContentView(root);}

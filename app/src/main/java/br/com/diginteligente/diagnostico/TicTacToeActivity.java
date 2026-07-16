@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-public class TicTacToeActivity extends Activity {
+public class TicTacToeActivity extends ImmersiveActivity {
     private final char[] board = new char[9];
     private final Button[] cells = new Button[9];
     private TextView status;

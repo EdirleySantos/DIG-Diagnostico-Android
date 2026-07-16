@@ -2,7 +2,7 @@ package br.com.diginteligente.diagnostico;
 
 import android.app.Activity;import android.app.AlertDialog;import android.graphics.Canvas;import android.graphics.Color;import android.graphics.Paint;import android.graphics.RectF;import android.graphics.Typeface;import android.graphics.drawable.GradientDrawable;import android.os.Bundle;import android.view.Gravity;import android.view.View;import android.view.ViewGroup;import android.view.animation.OvershootInterpolator;import android.widget.Button;import android.widget.GridLayout;import android.widget.LinearLayout;import android.widget.ScrollView;import android.widget.TextView;import java.util.ArrayList;import java.util.Collections;import java.util.Comparator;import java.util.List;
 
-public class DominoActivity extends Activity{
+public class DominoActivity extends ImmersiveActivity{
  private final List<Tile>[]hands=new ArrayList[]{new ArrayList<>(),new ArrayList<>(),new ArrayList<>(),new ArrayList<>()};private final List<Tile>chain=new ArrayList<>();private GridLayout board,hand;private TextView status,topCount,leftCount,rightCount,score;private int left=-1,right=-1,current,passes;private boolean ended;
  @Override protected void onCreate(Bundle b){super.onCreate(b);build();newMatch();}
  private void build(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(8),dp(10),dp(8),dp(8));root.setBackgroundColor(0xff06472f);

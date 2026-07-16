@@ -15,7 +15,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import net.objecthunter.exp4j.ExpressionBuilder;
 
-public class CalculatorActivity extends Activity {
+public class CalculatorActivity extends ImmersiveActivity {
     private EditText expression;
     private TextView result;
     private TextView history;

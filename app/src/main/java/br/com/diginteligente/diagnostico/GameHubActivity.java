@@ -12,7 +12,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-public class GameHubActivity extends Activity {
+public class GameHubActivity extends ImmersiveActivity {
     private LinearLayout content;
 
     @Override protected void onCreate(Bundle state) {
