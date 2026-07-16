@@ -9,6 +9,11 @@
         android:allowBackup="true"
         android:label="DIG Diagnostico"
         android:theme="@style/AppTheme">
+        <activity android:name=".RaceActivity" android:screenOrientation="portrait" />
+        <activity android:name=".TableGameActivity" />
+        <activity android:name=".TicTacToeActivity" />
+        <activity android:name=".CalculatorActivity" />
+        <activity android:name=".GameHubActivity" />
         <activity
             android:name=".MainActivity"
             android:exported="true">

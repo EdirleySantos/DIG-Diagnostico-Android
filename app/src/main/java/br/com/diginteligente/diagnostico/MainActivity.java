@@ -144,6 +144,7 @@ public class MainActivity extends Activity {
         addAction("Analisar aplicativos agora", v -> analyzeApps());
         addAction("Analisar pasta, SD ou USB", v -> chooseFolder());
         addAction("Verificar seguranca", v -> analyzeSecurity());
+        addAction("Jogos e calculadora", v -> startActivity(new Intent(this, GameHubActivity.class)));
         addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
         addSecondaryAction("Ver historico e tendencias", v -> showHistory());
         addSecondaryAction("Verificar atualizacoes", v -> checkForUpdates(true));
