@@ -129,24 +129,59 @@ public class CalculatorActivity extends Activity {
         EditText principal = input("Valor inicial (R$)");
         EditText rate = input("Juros por periodo (%)");
         EditText periods = input("Quantidade de periodos/parcelas");
-        Spinner type = spinner(new String[]{"Juros compostos", "Juros simples"});
-        toolPanel.addView(type, matchHeight(52));
-        addField(principal); addField(rate); addField(periods);
-        Button calculate = actionButton("Calcular parcelas", 0xff45b978);
-        toolPanel.addView(calculate, matchHeight(54));
+        final boolean[] compound = {true};
+        toolPanel.addView(sectionLabel("TIPO DE JUROS"));
+        LinearLayout modes = row();
+        Button compoundButton = actionButton("Compostos", PURPLE);
+        Button simpleButton = actionButton("Simples", 0xffd9d4df);
+        simpleButton.setTextColor(0xff4d4155);
+        modes.addView(compoundButton, weightedHeight(52));
+        modes.addView(simpleButton, weightedHeight(52));
+        toolPanel.addView(modes, matchWrap());
+        compoundButton.setOnClickListener(v -> { compound[0] = true; styleModeButton(compoundButton, true); styleModeButton(simpleButton, false); });
+        simpleButton.setOnClickListener(v -> { compound[0] = false; styleModeButton(compoundButton, false); styleModeButton(simpleButton, true); });
+        addLabeledField("VALOR INICIAL", principal);
+        addLabeledField("TAXA POR PARCELA OU PERIODO", rate);
+        addLabeledField("NUMERO DE PARCELAS OU PERIODOS", periods);
+        Button calculate = actionButton("Calcular", 0xff45b978);
+        LinearLayout.LayoutParams calculateLp = matchHeight(56); calculateLp.setMargins(0, dp(10), 0, 0);
+        toolPanel.addView(calculate, calculateLp);
+        LinearLayout summary = column();
+        summary.setBackground(round(Color.WHITE, 10));
+        summary.setPadding(dp(14), dp(12), dp(14), dp(14));
+        summary.setVisibility(View.GONE);
+        LinearLayout.LayoutParams summaryLp = matchWrap(); summaryLp.setMargins(0, dp(10), 0, 0);
+        toolPanel.addView(summary, summaryLp);
+        TextView summaryTitle = label("RESUMO DO CALCULO", 13, PURPLE);
+        summaryTitle.setTypeface(null, android.graphics.Typeface.BOLD); summary.addView(summaryTitle);
+        TextView initialValue = summaryLine(summary, "Valor inicial", 0xff62a8e5);
+        TextView interestValue = summaryLine(summary, "Juros acumulados", 0xffffa45b);
+        TextView totalValue = summaryLine(summary, "Total a pagar", 0xffd84f68);
+        TextView installmentValue = summaryLine(summary, "Valor de cada parcela", 0xff45b978);
+        TextView explanation = label("", 13, 0xff52636a);
+        explanation.setPadding(dp(4), dp(8), dp(4), dp(4)); summary.addView(explanation);
+        Button useTotal = actionButton("Usar total na calculadora", TEAL);
+        LinearLayout.LayoutParams useLp = matchHeight(52); useLp.setMargins(0, dp(7), 0, 0);
+        summary.addView(useTotal, useLp);
+        final String[] calculatedTotal = {""};
+        useTotal.setOnClickListener(v -> useHistoryValue(calculatedTotal[0]));
         calculate.setOnClickListener(v -> {
             try {
                 double p = number(principal);
                 double i = number(rate) / 100d;
                 int n = (int) number(periods);
                 if (p < 0 || i < 0 || n < 1) throw new IllegalArgumentException();
-                boolean compound = type.getSelectedItemPosition() == 0;
-                double total = compound ? p * Math.pow(1 + i, n) : p * (1 + i * n);
+                double total = compound[0] ? p * Math.pow(1 + i, n) : p * (1 + i * n);
                 double interest = total - p;
-                String name = compound ? "Juros compostos" : "Juros simples";
-                String details = name + "\nTotal: " + money(total) + "\nJuros: " + money(interest)
-                        + "\n" + n + " parcelas de " + money(total / n);
-                showToolResult(details, total, name + ": " + money(p) + " -> " + money(total));
+                String name = compound[0] ? "Juros compostos" : "Juros simples";
+                String raw = decimal(total);
+                initialValue.setText(money(p)); interestValue.setText(money(interest));
+                totalValue.setText(money(total)); installmentValue.setText(n + "x de " + money(total / n));
+                explanation.setText("Taxa de " + decimal(i * 100) + "% por periodo. " + (compound[0]
+                        ? "Os juros incidem sobre o saldo acumulado." : "Os juros incidem somente sobre o valor inicial."));
+                calculatedTotal[0] = raw; summary.setVisibility(View.VISIBLE);
+                result.setText(raw); expression.setText(""); justCalculated = true;
+                addHistory(name + ": " + money(p) + " -> " + money(total) + " (" + n + "x)", raw);
             } catch (Exception e) { invalidFields(); }
         });
     }
@@ -377,7 +412,19 @@ public class CalculatorActivity extends Activity {
     }
 
     private boolean isOperator(String key) { return key.length() == 1 && "+-*/".contains(key); }
-    private double number(EditText field) { return Double.parseDouble(field.getText().toString().trim().replace(" ", "").replace(",", ".")); }
+    private double number(EditText field) {
+        String value = field.getText().toString().trim().replace("R$", "").replace("US$", "").replace(" ", "");
+        int comma = value.lastIndexOf(',');
+        int dot = value.lastIndexOf('.');
+        if (comma >= 0 && dot >= 0) {
+            value = comma > dot ? value.replace(".", "").replace(',', '.') : value.replace(",", "");
+        } else if (comma >= 0) {
+            value = value.replace(',', '.');
+        } else if (value.matches("[-+]?\\d{1,3}(\\.\\d{3})+")) {
+            value = value.replace(".", "");
+        }
+        return Double.parseDouble(value);
+    }
     private String decimal(double value) {
         if (!Double.isFinite(value)) throw new IllegalArgumentException();
         if (Math.rint(value) == value) return String.valueOf((long) value);
@@ -404,6 +451,33 @@ public class CalculatorActivity extends Activity {
     }
 
     private void addField(EditText field) { LinearLayout.LayoutParams lp = matchHeight(56); lp.setMargins(0, dp(6), 0, 0); toolPanel.addView(field, lp); }
+    private void addLabeledField(String text, EditText field) {
+        toolPanel.addView(sectionLabel(text));
+        toolPanel.addView(field, matchHeight(56));
+    }
+    private TextView sectionLabel(String text) {
+        TextView title = label(text, 11, 0xff665d6c);
+        title.setPadding(dp(4), dp(9), 0, dp(3));
+        return title;
+    }
+    private TextView summaryLine(LinearLayout parent, String title, int color) {
+        LinearLayout line = row();
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        line.setPadding(dp(10), dp(7), dp(10), dp(7));
+        TextView name = label(title, 14, 0xff665d6c);
+        TextView value = label("R$ 0,00", 17, color);
+        value.setGravity(Gravity.END);
+        value.setTypeface(null, android.graphics.Typeface.BOLD);
+        line.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+        line.addView(value, new LinearLayout.LayoutParams(0, -2, 1));
+        parent.addView(line, matchWrap());
+        return value;
+    }
+    private void styleModeButton(Button button, boolean selected) {
+        button.setBackground(round(selected ? PURPLE : 0xffd9d4df, 10));
+        button.setTextColor(selected ? Color.WHITE : 0xff4d4155);
+        button.setElevation(selected ? dp(7) : dp(2));
+    }
     private EditText input(String hint) {
         EditText field = new EditText(this); field.setHint(hint); field.setTextSize(17);
         field.setSingleLine(true); field.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL | InputType.TYPE_NUMBER_FLAG_SIGNED);
