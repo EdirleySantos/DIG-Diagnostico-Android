@@ -52,19 +52,9 @@ public class GameHubActivity extends Activity {
         content.addView(rank, space());
         addGame("Calculadora inteligente", "Cientifica, historico e explicacao", CalculatorActivity.class, Color.rgb(8, 126, 109));
         addGame("Jogo da velha", "Dois jogadores ou maquina adaptativa", TicTacToeActivity.class, Color.rgb(198, 72, 73));
-        addGame("Arena 4D experimental", "Camera, profundidade, luz e 10 carros", FourDArenaActivity.class, Color.rgb(97, 61, 136));
-        addLocked("Paciencia 3D", "Cartas, movimentos e desafios por etapas");
+        addGame("Paciencia 3D", "Quatro montes, animacoes e pontuacao", SolitaireActivity.class, Color.rgb(180, 70, 99));
         addGame("Domino 3D", "Duplo-seis completo contra a maquina", DominoActivity.class, Color.rgb(32, 112, 86));
-        addLocked("Xadrez", "Partidas locais e adversario adaptativo");
-    }
-
-    private void addTableGame(String title, String detail, String mode, int color) {
-        LinearLayout card = panel(Color.WHITE);
-        card.addView(text(title, 18, Color.rgb(29, 45, 52), true));
-        card.addView(text(detail, 13, Color.rgb(83, 94, 99), false));
-        Button open = new Button(this); open.setText("Abrir"); open.setAllCaps(false); open.setTextColor(Color.WHITE); open.setBackground(round(color));
-        open.setOnClickListener(v -> startActivity(new Intent(this, TableGameActivity.class).putExtra("mode", mode)));
-        card.addView(open); content.addView(card, space());
+        addGame("Xadrez", "Regras completas e adversario automatico", ChessActivity.class, Color.rgb(75, 82, 112));
     }
 
     private void addGame(String title, String detail, Class<?> target, int color) {

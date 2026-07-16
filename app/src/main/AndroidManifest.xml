@@ -10,8 +10,9 @@
         android:allowBackup="true"
         android:label="DIG Diagnostico"
         android:theme="@style/AppTheme">
-        <activity android:name=".FourDArenaActivity" android:screenOrientation="landscape" />
         <activity android:name=".DominoActivity" />
+        <activity android:name=".ChessActivity" />
+        <activity android:name=".SolitaireActivity" />
         <activity android:name=".TicTacToeActivity" />
         <activity android:name=".CalculatorActivity" />
         <activity android:name=".GameHubActivity" />
