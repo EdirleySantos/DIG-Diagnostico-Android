@@ -56,7 +56,7 @@ import java.util.concurrent.Executors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-public class MainActivity extends ImmersiveActivity {
+public class MainActivity extends Activity {
     private static final int PICK_FOLDER = 1201;
     private static final long DAY = 24L * 60L * 60L * 1000L;
     private static final long LARGE_FILE = 50L * 1024L * 1024L;
@@ -73,10 +73,38 @@ public class MainActivity extends ImmersiveActivity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        buildScreen();
-        registerDownloadReceiver();
-        recordDailySnapshot();
-        showOverview();
+        try {
+            buildScreen();
+            registerDownloadReceiver();
+            recordDailySnapshot();
+            showOverview();
+        } catch (Exception error) {
+            showStartupRecovery(error);
+        }
+    }
+
+    private void showStartupRecovery(Exception error) {
+        LinearLayout recovery = new LinearLayout(this);
+        recovery.setOrientation(LinearLayout.VERTICAL);
+        recovery.setPadding(dp(24), dp(32), dp(24), dp(24));
+        recovery.setBackgroundColor(Color.rgb(246, 248, 250));
+        TextView title = text("DIG Diagnostico", 26, Color.rgb(18, 59, 66), true);
+        recovery.addView(title);
+        TextView message = text("A inicializacao encontrou um problema local. Seus arquivos e aplicativos nao foram alterados.", 16, Color.DKGRAY, false);
+        message.setPadding(0, dp(18), 0, dp(18));
+        recovery.addView(message);
+        Button retry = new Button(this);
+        retry.setText("Tentar novamente");
+        retry.setOnClickListener(v -> recreate());
+        recovery.addView(retry);
+        Button resetLearning = new Button(this);
+        resetLearning.setText("Limpar somente historico do DIG");
+        resetLearning.setOnClickListener(v -> {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().clear().apply();
+            recreate();
+        });
+        recovery.addView(resetLearning);
+        setContentView(recovery);
     }
 
     private void buildScreen() {
