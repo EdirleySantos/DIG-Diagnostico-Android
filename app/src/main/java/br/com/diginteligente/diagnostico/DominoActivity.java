@@ -3,6 +3,9 @@ package br.com.diginteligente.diagnostico;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -32,10 +35,11 @@ public class DominoActivity extends Activity {
 
     private void buildScreen() {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(12),dp(16),dp(12),dp(12)); root.setBackgroundColor(0xff0d614f);
-        TextView title = label("DOMINO 3D",25,Color.WHITE,true); root.addView(title);
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);TextView title = label("DOMINO",25,Color.WHITE,true);header.addView(title,new LinearLayout.LayoutParams(0,-2,1));Button help=action("?");help.setOnClickListener(v->showTutorial());header.addView(help,new LinearLayout.LayoutParams(dp(52),dp(48)));root.addView(header);
         score = label("",13,0xffd8fff3,false); root.addView(score);
         status = label("",16,Color.WHITE,true); status.setPadding(0,dp(8),0,dp(8)); root.addView(status);
-        HorizontalScrollView scroll = new HorizontalScrollView(this); scroll.setFillViewport(true); scroll.setBackground(round(0xff08483c,10,0xff52b89b));
+        LinearLayout opponent=new LinearLayout(this);opponent.setGravity(Gravity.CENTER);TextView avatar=label("CPU",13,Color.WHITE,true);avatar.setGravity(Gravity.CENTER);avatar.setBackground(round(0xffd95c59,30,Color.WHITE));opponent.addView(avatar,new LinearLayout.LayoutParams(dp(54),dp(54)));TextView back=label("  Pecas fechadas",14,0xffd8fff3,false);opponent.addView(back);root.addView(opponent);
+        HorizontalScrollView scroll = new HorizontalScrollView(this); scroll.setFillViewport(true); scroll.setBackground(round(0xff063b31,10,0xff52b89b));
         chainView = new LinearLayout(this); chainView.setGravity(Gravity.CENTER_VERTICAL); chainView.setPadding(dp(12),dp(18),dp(12),dp(18)); scroll.addView(chainView,new ViewGroup.LayoutParams(-2,dp(116))); root.addView(scroll,new LinearLayout.LayoutParams(-1,dp(116)));
         TextView your = label("SUAS PECAS",12,0xffd8fff3,true); your.setPadding(0,dp(12),0,dp(6)); root.addView(your);
         handView = new GridLayout(this); handView.setColumnCount(4); root.addView(handView,new LinearLayout.LayoutParams(-1,0,1));
@@ -44,7 +48,7 @@ public class DominoActivity extends Activity {
         Button pass = action("Passar"); pass.setOnClickListener(v->passPlayer());
         Button restart = action("Nova rodada"); restart.setOnClickListener(v->newRound());
         actions.addView(draw,new LinearLayout.LayoutParams(0,-2,1)); actions.addView(pass,new LinearLayout.LayoutParams(0,-2,1)); actions.addView(restart,new LinearLayout.LayoutParams(0,-2,1)); root.addView(actions);
-        setContentView(root);
+        setContentView(root); if(!getSharedPreferences("dig_games",MODE_PRIVATE).getBoolean("domino_tutorial",false))root.postDelayed(this::showTutorial,350);
     }
 
     private void newRound() {
@@ -60,13 +64,15 @@ public class DominoActivity extends Activity {
     private void placeFirst(Tile t){chain.add(t);left=t.a;right=t.b;}
 
     private void render(){
-        chainView.removeAllViews();for(Tile t:chain){TextView v=tileView(t,false);chainView.addView(v,new LinearLayout.LayoutParams(dp(70),dp(82)));}
-        handView.removeAllViews();for(Tile t:new ArrayList<>(player)){TextView v=tileView(t,true);v.setOnClickListener(x->playPlayer(t,v));GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.width=0;lp.height=dp(82);lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);lp.setMargins(dp(3),dp(3),dp(3),dp(3));handView.addView(v,lp);}
+        chainView.removeAllViews();for(Tile t:chain){View v=tileView(t,false);chainView.addView(v,new LinearLayout.LayoutParams(dp(66),dp(84)));}
+        handView.removeAllViews();for(Tile t:new ArrayList<>(player)){View v=tileView(t,true);v.setOnClickListener(x->playPlayer(t,v));GridLayout.LayoutParams lp=new GridLayout.LayoutParams();lp.width=0;lp.height=dp(86);lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);lp.setMargins(dp(3),dp(3),dp(3),dp(3));handView.addView(v,lp);}
         int total=getSharedPreferences("dig_games",MODE_PRIVATE).getInt("total_points",0);score.setText("Voce: "+player.size()+" pecas   |   Maquina: "+cpu.size()+"   |   Monte: "+stock.size()+"   |   Geral: "+total+" pts");
         if(!ended)status.setText(playerTurn?"Sua vez: toque em uma peca compativel":"A maquina esta pensando...");
     }
 
-    private TextView tileView(Tile t,boolean hand){TextView v=label(t.a+"  |  "+t.b,20,0xff17212b,true);v.setGravity(Gravity.CENTER);v.setBackground(round(hand?0xfffff7dc:Color.WHITE,8,0xffd2b762));v.setElevation(dp(7));v.setPadding(dp(3),dp(4),dp(3),dp(4));return v;}
+    private View tileView(Tile t,boolean hand){DominoTileView v=new DominoTileView(t,hand);v.setElevation(dp(8));return v;}
+
+    private void showTutorial(){getSharedPreferences("dig_games",MODE_PRIVATE).edit().putBoolean("domino_tutorial",true).apply();new AlertDialog.Builder(this).setTitle("Como jogar Domino").setMessage("Toque em uma peca da sua mao para encaixar em uma das pontas da sequencia.\n\nSe nao tiver jogada, compre no monte. Quando o monte acabar e nao houver encaixe, passe a vez.\n\nVence quem terminar as pecas primeiro; em jogo bloqueado, ganha quem tiver a menor soma.").setPositiveButton("Entendi",null).show();}
 
     private void playPlayer(Tile tile,View view){if(!playerTurn||ended)return;if(!canPlay(tile)){shake(view);status.setText("Essa peca nao combina com "+left+" ou "+right);return;}player.remove(tile);place(tile);animate(view);playerTurn=false;afterMove(true);}
     private boolean canPlay(Tile t){return left<0||t.a==left||t.b==left||t.a==right||t.b==right;}
@@ -93,5 +99,12 @@ public class DominoActivity extends Activity {
     private TextView label(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
     private GradientDrawable round(int fill,int radius,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(fill);d.setCornerRadius(dp(radius));if(stroke!=0)d.setStroke(dp(2),stroke);return d;}
     private int dp(int n){return(int)(n*getResources().getDisplayMetrics().density+.5f);}
+    private float dp(float n){return n*getResources().getDisplayMetrics().density;}
     private static class Tile{final int a,b;Tile(int a,int b){this.a=a;this.b=b;}}
+    private class DominoTileView extends View{
+        private final Tile tile;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final boolean hand;
+        DominoTileView(Tile tile,boolean hand){super(DominoActivity.this);this.tile=tile;this.hand=hand;setLayerType(View.LAYER_TYPE_SOFTWARE,null);}
+        @Override protected void onDraw(Canvas c){super.onDraw(c);float w=getWidth(),h=getHeight();paint.setShadowLayer(dp(3),0,dp(3),0x66000000);paint.setColor(hand?0xfffffff8:Color.WHITE);c.drawRoundRect(new RectF(dp(3),dp(3),w-dp(3),h-dp(6)),dp(8),dp(8),paint);paint.clearShadowLayer();paint.setColor(0xff25282b);paint.setStrokeWidth(dp(2));c.drawLine(dp(8),h/2,w-dp(8),h/2,paint);drawPips(c,tile.a,w/2,h/4,Math.min(w,h/2)*.30f);drawPips(c,tile.b,w/2,h*.75f,Math.min(w,h/2)*.30f);}
+        private void drawPips(Canvas c,int value,float cx,float cy,float spread){paint.setColor(0xff17191b);float r=dp(3.2f);float[][]pos={{0,0},{-1,-1},{1,1},{-1,1},{1,-1},{-1,0},{1,0}};int[][]map={{},{0},{1,2},{1,0,2},{1,2,3,4},{1,2,3,4,0},{1,2,3,4,5,6}};for(int index:map[value])c.drawCircle(cx+pos[index][0]*spread,cy+pos[index][1]*spread,r,paint);}
+    }
 }
