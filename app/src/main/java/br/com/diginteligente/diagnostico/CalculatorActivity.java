@@ -19,6 +19,7 @@ public class CalculatorActivity extends ImmersiveActivity {
     private EditText expression;
     private TextView result;
     private TextView history;
+    private boolean justCalculated;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -40,13 +41,14 @@ public class CalculatorActivity extends ImmersiveActivity {
     }
 
     private void press(String key){
-        if("C".equals(key)){ expression.setText(""); result.setText("0"); return; }
+        if("C".equals(key)){ expression.setText(""); result.setText("0"); justCalculated=false; return; }
         if("<-".equals(key)){ String s=expression.getText().toString(); if(!s.isEmpty()) expression.setText(s.substring(0,s.length()-1)); return; }
-        if("=".equals(key)){ calculate(); return; }
+        if("=".equals(key)){ if(justCalculated||expression.getText().toString().trim().isEmpty()){result.setText("0");justCalculated=false;}else calculate(); return; }
+        if(justCalculated){result.setText("0");justCalculated=false;}
         expression.append("pi".equals(key)?String.valueOf(Math.PI):key);
     }
     private void calculate(){
-        try { String source=expression.getText().toString(); double value=new ExpressionBuilder(source).build().evaluate(); String answer=Math.rint(value)==value?String.valueOf((long)value):String.format(java.util.Locale.ROOT,"%.8f",value).replaceAll("0+$",""); result.setText(answer); String old=getSharedPreferences("dig_games",MODE_PRIVATE).getString("calc_history",""); String next=source+" = "+answer+"\n"+old; if(next.length()>800)next=next.substring(0,800); getSharedPreferences("dig_games",MODE_PRIVATE).edit().putString("calc_history",next).apply(); history.setText(next); }
+        try { String source=expression.getText().toString(); double value=new ExpressionBuilder(source).build().evaluate(); String answer=Math.rint(value)==value?String.valueOf((long)value):String.format(java.util.Locale.ROOT,"%.8f",value).replaceAll("0+$",""); result.setText(answer); expression.setText(""); justCalculated=true; String old=getSharedPreferences("dig_games",MODE_PRIVATE).getString("calc_history",""); String next=source+" = "+answer+"\n"+old; if(next.length()>800)next=next.substring(0,800); getSharedPreferences("dig_games",MODE_PRIVATE).edit().putString("calc_history",next).apply(); history.setText(next); }
         catch(Exception e){ result.setText("Calculo invalido"); }
     }
     private int buttonColor(String key){if(key.matches("[0-9.]"))return 0xff62cce0;if("+-*/".contains(key)&&key.length()==1)return 0xffffa45b;if("=".equals(key))return 0xff45b978;if("C".equals(key)||"<-".equals(key))return 0xffff7184;if("(".equals(key)||")".equals(key))return 0xffffd166;return 0xff9b8bea;}
