@@ -2,6 +2,7 @@ package br.com.diginteligente.diagnostico;
 
 import android.app.Activity;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -19,13 +20,14 @@ public class CalculatorActivity extends Activity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(14), dp(18), dp(14), dp(14)); root.setBackgroundColor(Color.rgb(247,248,250));
-        TextView title = new TextView(this); title.setText("Calculadora inteligente"); title.setTextSize(24); title.setTextColor(Color.rgb(25,51,61)); title.setPadding(0,0,0,dp(12)); root.addView(title);
-        expression = new EditText(this); expression.setTextSize(24); expression.setHint("Digite um calculo"); expression.setInputType(InputType.TYPE_CLASS_TEXT); root.addView(expression);
-        result = new TextView(this); result.setText("0"); result.setTextSize(34); result.setGravity(Gravity.END); result.setTextColor(Color.rgb(8,126,109)); result.setPadding(0,dp(10),0,dp(10)); root.addView(result);
+        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(dp(16), dp(20), dp(16), dp(14)); root.setBackgroundColor(Color.rgb(255,246,232));
+        TextView title = new TextView(this); title.setText("Calculadora inteligente"); title.setTextSize(27); title.setTextColor(Color.rgb(94,49,126)); title.setPadding(dp(4),0,0,dp(12)); root.addView(title);
+        expression = new EditText(this); expression.setTextSize(24); expression.setHint("Digite um calculo"); expression.setInputType(InputType.TYPE_CLASS_TEXT); expression.setBackground(round(Color.WHITE,12)); expression.setPadding(dp(14),dp(10),dp(14),dp(10)); root.addView(expression);
+        result = new TextView(this); result.setText("0"); result.setTextSize(38); result.setGravity(Gravity.END); result.setTextColor(Color.rgb(220,70,91)); result.setBackground(round(Color.rgb(255,226,232),12)); result.setPadding(dp(12),dp(12),dp(12),dp(12)); LinearLayout.LayoutParams resultLp=new LinearLayout.LayoutParams(-1,-2); resultLp.setMargins(0,dp(10),0,dp(10)); root.addView(result,resultLp);
         GridLayout grid = new GridLayout(this); grid.setColumnCount(4);
         String[] keys={"7","8","9","/","4","5","6","*","1","2","3","-","0",".","(","+","sin(","cos(","sqrt(",")","C","<-","pi","="};
-        for(String key:keys){ Button b=new Button(this); b.setText(key); b.setOnClickListener(v->press(key)); grid.addView(b,new GridLayout.LayoutParams(){ { width=0; height=dp(54); columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f); } }); }
+        int[] colors={0xfff7c948,0xff55c2da,0xffff7b89,0xff8f7ee7}; int index=0;
+        for(String key:keys){ Button b=new Button(this); b.setText(key); b.setTextSize(17); b.setTextColor(Color.rgb(35,38,48)); b.setBackground(round(colors[index++%colors.length],10)); b.setOnClickListener(v->press(key)); GridLayout.LayoutParams lp=new GridLayout.LayoutParams(); lp.width=0;lp.height=dp(56);lp.columnSpec=GridLayout.spec(GridLayout.UNDEFINED,1f);lp.setMargins(dp(2),dp(2),dp(2),dp(2));grid.addView(b,lp); }
         root.addView(grid,new LinearLayout.LayoutParams(-1,-2));
         history = new TextView(this); history.setTextSize(13); history.setTextColor(Color.DKGRAY); history.setPadding(0,dp(12),0,0); history.setText(getSharedPreferences("dig_games",MODE_PRIVATE).getString("calc_history","Historico vazio")); root.addView(history);
         setContentView(root);
@@ -42,4 +44,5 @@ public class CalculatorActivity extends Activity {
         catch(Exception e){ result.setText("Calculo invalido"); }
     }
     private int dp(int n){return(int)(n*getResources().getDisplayMetrics().density+.5f);}
+    private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
 }
