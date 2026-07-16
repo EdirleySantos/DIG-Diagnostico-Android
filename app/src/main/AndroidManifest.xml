@@ -7,7 +7,9 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="DIG Diagnostico"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/AppTheme">
         <activity android:name=".CalculatorActivity" />
         <activity
