@@ -54,7 +54,7 @@ public class GameHubActivity extends Activity {
         addGame("Jogo da velha", "Dois jogadores ou maquina adaptativa", TicTacToeActivity.class, Color.rgb(198, 72, 73));
         addGame("Arena 4D experimental", "Camera, profundidade, luz e 10 carros", FourDArenaActivity.class, Color.rgb(97, 61, 136));
         addLocked("Paciencia 3D", "Cartas, movimentos e desafios por etapas");
-        addLocked("Domino", "Dupla local ou contra a maquina");
+        addGame("Domino 3D", "Duplo-seis completo contra a maquina", DominoActivity.class, Color.rgb(32, 112, 86));
         addLocked("Xadrez", "Partidas locais e adversario adaptativo");
     }
 
