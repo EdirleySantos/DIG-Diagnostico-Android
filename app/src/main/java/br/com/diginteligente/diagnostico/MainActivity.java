@@ -1,0 +1,583 @@
+package br.com.diginteligente.diagnostico;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.AppOpsManager;
+import android.app.DownloadManager;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Environment;
+import android.os.StatFs;
+import android.os.Build;
+import android.provider.Settings;
+import android.text.format.Formatter;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.documentfile.provider.DocumentFile;
+
+import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class MainActivity extends Activity {
+    private static final int PICK_FOLDER = 1201;
+    private static final long DAY = 24L * 60L * 60L * 1000L;
+    private static final long LARGE_FILE = 50L * 1024L * 1024L;
+    private static final String RELEASE_API = "https://api.github.com/repos/EdirleySantos/DIG-Diagnostico-Android/releases/latest";
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private LinearLayout content;
+    private TextView status;
+    private ProgressBar progress;
+    private long updateDownloadId = -1;
+    private BroadcastReceiver downloadReceiver;
+
+    @Override
+    protected void onCreate(Bundle state) {
+        super.onCreate(state);
+        buildScreen();
+        registerDownloadReceiver();
+        showOverview();
+    }
+
+    private void buildScreen() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.rgb(244, 247, 246));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(dp(20), dp(20), dp(20), dp(16));
+        header.setBackgroundColor(Color.rgb(18, 59, 66));
+        TextView title = text("DIG Diagnostico", 24, Color.WHITE, true);
+        TextView subtitle = text("Analise segura do seu Android", 14, Color.rgb(195, 224, 218), false);
+        header.addView(title);
+        header.addView(subtitle);
+        root.addView(header);
+
+        LinearLayout nav = new LinearLayout(this);
+        nav.setPadding(dp(8), dp(8), dp(8), dp(8));
+        nav.setGravity(Gravity.CENTER);
+        nav.addView(navButton("Resumo", v -> showOverview()));
+        nav.addView(navButton("Apps", v -> analyzeApps()));
+        nav.addView(navButton("Arquivos", v -> chooseFolder()));
+        nav.addView(navButton("Seguranca", v -> analyzeSecurity()));
+        root.addView(nav);
+
+        progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setIndeterminate(true);
+        progress.setVisibility(View.GONE);
+        root.addView(progress, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(4)));
+
+        ScrollView scroll = new ScrollView(this);
+        content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(16), dp(8), dp(16), dp(28));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        status = text("Nenhuma alteracao e feita sem sua confirmacao.", 12, Color.DKGRAY, false);
+        status.setPadding(dp(16), dp(10), dp(16), dp(10));
+        root.addView(status);
+        setContentView(root);
+    }
+
+    private void showOverview() {
+        clear("Visao geral");
+        StatFs fs = new StatFs(Environment.getDataDirectory().getPath());
+        long total = fs.getTotalBytes();
+        long free = fs.getAvailableBytes();
+        long used = total - free;
+        addMetric("Armazenamento usado", format(used) + " de " + format(total));
+        addMetric("Espaco disponivel", format(free));
+        int installed = getPackageManager().getInstalledApplications(0).size();
+        addMetric("Aplicativos encontrados", String.valueOf(installed));
+
+        long ownCache = folderSize(getCacheDir());
+        addMetric("Cache deste diagnostico", format(ownCache));
+        addAction("Limpar somente este cache", v -> confirmOwnCache());
+        addAction("Abrir gerenciador de armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
+        addAction("Verificar atualizacoes", v -> checkForUpdates(true));
+        addInfo("O Android protege os dados dos outros aplicativos. Este diagnostico orienta a limpeza usando as telas oficiais do sistema.");
+    }
+
+    private void checkForUpdates(boolean userRequested) {
+        busy(true, "Consultando atualizacoes...");
+        worker.execute(() -> {
+            try {
+                HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
+                connection.setRequestProperty("Accept", "application/vnd.github+json");
+                connection.setRequestProperty("User-Agent", "DIG-Diagnostico-Android");
+                connection.setConnectTimeout(12000);
+                connection.setReadTimeout(12000);
+                int code = connection.getResponseCode();
+                if (code != 200) throw new Exception("GitHub respondeu " + code);
+                StringBuilder json = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) json.append(line);
+                }
+                JSONObject release = new JSONObject(json.toString());
+                String tag = release.optString("tag_name", "0").replaceFirst("^[vV]", "");
+                String notes = release.optString("body", "Nova versao disponivel.");
+                String apkUrl = "";
+                JSONArray assets = release.optJSONArray("assets");
+                if (assets != null) {
+                    for (int i = 0; i < assets.length(); i++) {
+                        JSONObject asset = assets.getJSONObject(i);
+                        if (asset.optString("name").toLowerCase(Locale.ROOT).endsWith(".apk")) {
+                            apkUrl = asset.optString("browser_download_url");
+                            break;
+                        }
+                    }
+                }
+                final String version = tag;
+                final String downloadUrl = apkUrl;
+                final String releaseNotes = notes.length() > 500 ? notes.substring(0, 500) : notes;
+                runOnUiThread(() -> {
+                    busy(false, "Verificacao de atualizacao concluida");
+                    if (compareVersions(version, BuildConfig.VERSION_NAME) > 0 && !downloadUrl.isEmpty()) {
+                        showUpdateDialog(version, releaseNotes, downloadUrl);
+                    } else if (userRequested) {
+                        new AlertDialog.Builder(this).setTitle("Aplicativo atualizado")
+                                .setMessage("Voce ja esta usando a versao mais recente: " + BuildConfig.VERSION_NAME)
+                                .setPositiveButton("OK", null).show();
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    busy(false, "Nao foi possivel consultar atualizacoes");
+                    if (userRequested) Toast.makeText(this, "Falha ao consultar o GitHub. Verifique a internet.", Toast.LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private int compareVersions(String remote, String local) {
+        String[] a = remote.split("\\.");
+        String[] b = local.split("\\.");
+        for (int i = 0; i < Math.max(a.length, b.length); i++) {
+            int av = i < a.length ? numberPart(a[i]) : 0;
+            int bv = i < b.length ? numberPart(b[i]) : 0;
+            if (av != bv) return Integer.compare(av, bv);
+        }
+        return 0;
+    }
+
+    private int numberPart(String value) {
+        try { return Integer.parseInt(value.replaceAll("[^0-9].*$", "")); }
+        catch (Exception ignored) { return 0; }
+    }
+
+    private void showUpdateDialog(String version, String notes, String url) {
+        new AlertDialog.Builder(this).setTitle("Atualizacao " + version)
+                .setMessage(notes + "\n\nO Android pedira sua confirmacao antes de instalar.")
+                .setNegativeButton("Depois", null)
+                .setPositiveButton("Baixar", (d, w) -> downloadUpdate(version, url))
+                .show();
+    }
+
+    private void downloadUpdate(String version, String url) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !getPackageManager().canRequestPackageInstalls()) {
+            new AlertDialog.Builder(this).setTitle("Autorizar atualizacoes")
+                    .setMessage("Permita que o DIG Diagnostico instale a atualizacao baixada. O Android ainda mostrara a confirmacao final.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("Abrir configuracao", (d, w) -> startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:" + getPackageName())))).show();
+            return;
+        }
+        DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+        request.setTitle("DIG Diagnostico " + version);
+        request.setDescription("Baixando atualizacao segura do GitHub");
+        request.setMimeType("application/vnd.android.package-archive");
+        request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "DIG-Diagnostico-Android-" + version + ".apk");
+        DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        updateDownloadId = manager.enqueue(request);
+        Toast.makeText(this, "Atualizacao sendo baixada", Toast.LENGTH_LONG).show();
+    }
+
+    private void registerDownloadReceiver() {
+        downloadReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                if (id != updateDownloadId) return;
+                DownloadManager manager = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+                Uri apk = manager.getUriForDownloadedFile(id);
+                if (apk == null) return;
+                Intent install = new Intent(Intent.ACTION_VIEW);
+                install.setDataAndType(apk, "application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(install);
+            }
+        };
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(downloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(downloadReceiver, filter);
+    }
+
+    private void analyzeApps() {
+        clear("Aplicativos pouco usados");
+        if (!hasUsageAccess()) {
+            addWarning("Permita o Acesso ao uso para identificar aplicativos que nao sao utilizados ha muito tempo.");
+            addAction("Conceder acesso ao uso", v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
+            return;
+        }
+        busy(true, "Analisando aplicativos...");
+        worker.execute(() -> {
+            List<AppCandidate> candidates = findUnusedApps();
+            runOnUiThread(() -> {
+                busy(false, candidates.size() + " sugestoes encontradas");
+                if (candidates.isEmpty()) addInfo("Nenhum aplicativo pouco usado foi identificado.");
+                for (AppCandidate app : candidates) addAppCandidate(app);
+            });
+        });
+    }
+
+    private List<AppCandidate> findUnusedApps() {
+        long now = System.currentTimeMillis();
+        long start = now - 365L * DAY;
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
+        Map<String, UsageStats> usage = new HashMap<>();
+        for (UsageStats stat : usm.queryUsageStats(UsageStatsManager.INTERVAL_YEARLY, start, now)) {
+            UsageStats old = usage.get(stat.getPackageName());
+            if (old == null || stat.getLastTimeUsed() > old.getLastTimeUsed()) usage.put(stat.getPackageName(), stat);
+        }
+        List<AppCandidate> result = new ArrayList<>();
+        PackageManager pm = getPackageManager();
+        for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
+            if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0 || ai.packageName.equals(getPackageName())) continue;
+            UsageStats stat = usage.get(ai.packageName);
+            long last = stat == null ? 0 : stat.getLastTimeUsed();
+            long days = last == 0 ? 9999 : (now - last) / DAY;
+            if (days >= 90) result.add(new AppCandidate(ai.loadLabel(pm).toString(), ai.packageName, days));
+        }
+        result.sort(Comparator.comparingLong((AppCandidate a) -> a.days).reversed());
+        return result;
+    }
+
+    private void addAppCandidate(AppCandidate app) {
+        String age = app.days > 3000 ? "Sem uso registrado" : "Nao usado ha " + app.days + " dias";
+        LinearLayout card = card(app.name, age);
+        Button details = smallButton("Detalhes");
+        details.setOnClickListener(v -> openAppDetails(app.packageName));
+        Button uninstall = smallButton("Desinstalar");
+        uninstall.setOnClickListener(v -> confirmUninstall(app));
+        LinearLayout row = new LinearLayout(this);
+        row.addView(details);
+        row.addView(uninstall);
+        card.addView(row);
+        content.addView(card);
+    }
+
+    private void chooseFolder() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION |
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(intent, PICK_FOLDER);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_FOLDER && resultCode == RESULT_OK && data != null) {
+            Uri uri = data.getData();
+            if (uri == null) return;
+            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            try { getContentResolver().takePersistableUriPermission(uri, flags); } catch (SecurityException ignored) { }
+            scanFolder(uri);
+        }
+    }
+
+    private void scanFolder(Uri uri) {
+        clear("Analise de arquivos");
+        busy(true, "Analisando a pasta escolhida...");
+        worker.execute(() -> {
+            List<FileCandidate> files = new ArrayList<>();
+            DocumentFile root = DocumentFile.fromTreeUri(this, uri);
+            if (root != null) walk(root, files, new int[]{0});
+            files.sort(Comparator.comparingLong((FileCandidate f) -> f.size).reversed());
+            runOnUiThread(() -> {
+                busy(false, files.size() + " arquivos para revisar");
+                if (files.isEmpty()) addInfo("Nenhum arquivo grande, antigo ou temporario foi encontrado nesta pasta.");
+                for (FileCandidate f : files) addFileCandidate(f);
+            });
+        });
+    }
+
+    private void walk(DocumentFile dir, List<FileCandidate> output, int[] visited) {
+        if (visited[0] >= 6000) return;
+        DocumentFile[] children;
+        try { children = dir.listFiles(); } catch (Exception e) { return; }
+        for (DocumentFile file : children) {
+            if (++visited[0] >= 6000) return;
+            if (file.isDirectory()) {
+                walk(file, output, visited);
+            } else {
+                String name = file.getName() == null ? "Arquivo sem nome" : file.getName();
+                String lower = name.toLowerCase(Locale.ROOT);
+                long age = file.lastModified() > 0 ? (System.currentTimeMillis() - file.lastModified()) / DAY : 0;
+                boolean temporary = lower.endsWith(".tmp") || lower.endsWith(".log") || lower.endsWith(".bak") || lower.endsWith(".apk");
+                if (file.length() >= LARGE_FILE || temporary || age >= 365) {
+                    String reason = file.length() >= LARGE_FILE ? "Arquivo grande" : temporary ? "Possivel residuo" : "Arquivo antigo";
+                    output.add(new FileCandidate(file, name, file.length(), age, reason));
+                }
+            }
+        }
+    }
+
+    private void addFileCandidate(FileCandidate item) {
+        String detail = item.reason + " | " + format(item.size) + (item.age > 0 ? " | " + item.age + " dias" : "");
+        LinearLayout card = card(item.name, detail);
+        Button remove = smallButton("Revisar e excluir");
+        remove.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle("Excluir este arquivo?")
+                .setMessage(item.name + "\n\n" + format(item.size) + "\n\nEsta acao nao apaga outros arquivos ou aplicativos.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Excluir", (d, w) -> {
+                    if (item.file.delete()) {
+                        content.removeView(card);
+                        Toast.makeText(this, "Arquivo excluido", Toast.LENGTH_SHORT).show();
+                    } else Toast.makeText(this, "O Android nao autorizou a exclusao", Toast.LENGTH_LONG).show();
+                }).show());
+        card.addView(remove);
+        content.addView(card);
+    }
+
+    private void analyzeSecurity() {
+        clear("Seguranca e permissoes");
+        busy(true, "Verificando aplicativos instalados...");
+        worker.execute(() -> {
+            List<String> warnings = new ArrayList<>();
+            PackageManager pm = getPackageManager();
+            for (PackageInfo pi : pm.getInstalledPackages(PackageManager.GET_PERMISSIONS)) {
+                if (pi.applicationInfo == null || (pi.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0) continue;
+                if (pi.requestedPermissions == null) continue;
+                for (String permission : pi.requestedPermissions) {
+                    if ("android.permission.REQUEST_INSTALL_PACKAGES".equals(permission)) {
+                        warnings.add(pi.applicationInfo.loadLabel(pm) + " pode instalar aplicativos de fontes externas.");
+                    }
+                }
+            }
+            Collections.sort(warnings);
+            runOnUiThread(() -> {
+                busy(false, warnings.size() + " pontos para revisar");
+                addInfo("Esta verificacao nao declara que um aplicativo e virus; ela destaca permissoes que merecem revisao.");
+                if (warnings.isEmpty()) addInfo("Nenhum aplicativo de terceiros com permissao de instalar APKs foi encontrado.");
+                for (String warning : warnings) addWarning(warning);
+                addAction("Verificar Play Protect", v -> openPlayProtect());
+                addAction("Revisar apps desconhecidos", v -> startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)));
+            });
+        });
+    }
+
+    private void confirmOwnCache() {
+        new AlertDialog.Builder(this).setTitle("Limpar cache?")
+                .setMessage("Somente os arquivos temporarios deste diagnostico serao removidos.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Limpar", (d, w) -> {
+                    deleteChildren(getCacheDir());
+                    showOverview();
+                }).show();
+    }
+
+    private void confirmUninstall(AppCandidate app) {
+        new AlertDialog.Builder(this).setTitle("Abrir desinstalacao?")
+                .setMessage("O Android mostrara a confirmacao oficial para " + app.name + ". O diagnostico nao remove o app sozinho.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Continuar", (d, w) -> startActivity(new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + app.packageName))))
+                .show();
+    }
+
+    private boolean hasUsageAccess() {
+        AppOpsManager ops = (AppOpsManager) getSystemService(APP_OPS_SERVICE);
+        return ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName()) == AppOpsManager.MODE_ALLOWED;
+    }
+
+    private void openAppDetails(String packageName) {
+        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName)));
+    }
+
+    private void openPlayProtect() {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.gms"));
+        intent.setPackage("com.android.vending");
+        try { startActivity(intent); } catch (Exception e) { startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS)); }
+    }
+
+    private void clear(String heading) {
+        content.removeAllViews();
+        TextView h = text(heading, 22, Color.rgb(18, 59, 66), true);
+        h.setPadding(0, dp(10), 0, dp(10));
+        content.addView(h);
+    }
+
+    private void addMetric(String label, String value) {
+        content.addView(card(label, value));
+    }
+
+    private void addInfo(String message) {
+        TextView view = text(message, 14, Color.rgb(55, 65, 67), false);
+        view.setPadding(dp(14), dp(14), dp(14), dp(14));
+        view.setBackgroundColor(Color.WHITE);
+        LinearLayout.LayoutParams lp = spacedParams();
+        content.addView(view, lp);
+    }
+
+    private void addWarning(String message) {
+        TextView view = text(message, 14, Color.rgb(101, 58, 0), false);
+        view.setPadding(dp(14), dp(14), dp(14), dp(14));
+        view.setBackgroundColor(Color.rgb(255, 244, 218));
+        content.addView(view, spacedParams());
+    }
+
+    private void addAction(String label, View.OnClickListener action) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setOnClickListener(action);
+        content.addView(button, spacedParams());
+    }
+
+    private LinearLayout card(String title, String detail) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(14), dp(12), dp(14), dp(12));
+        card.setBackgroundColor(Color.WHITE);
+        card.addView(text(title, 16, Color.rgb(25, 42, 45), true));
+        TextView d = text(detail, 13, Color.rgb(80, 92, 94), false);
+        d.setPadding(0, dp(4), 0, dp(4));
+        card.addView(d);
+        card.setLayoutParams(spacedParams());
+        return card;
+    }
+
+    private Button navButton(String label, View.OnClickListener listener) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextSize(12);
+        b.setAllCaps(false);
+        b.setOnClickListener(listener);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setPadding(dp(4), 0, dp(4), 0);
+        b.setLayoutParams(new LinearLayout.LayoutParams(0, dp(46), 1));
+        return b;
+    }
+
+    private Button smallButton(String label) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        return b;
+    }
+
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        return view;
+    }
+
+    private LinearLayout.LayoutParams spacedParams() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, 0, dp(8));
+        return lp;
+    }
+
+    private void busy(boolean active, String message) {
+        progress.setVisibility(active ? View.VISIBLE : View.GONE);
+        status.setText(message);
+    }
+
+    private String format(long bytes) {
+        return Formatter.formatFileSize(this, Math.max(0, bytes));
+    }
+
+    private long folderSize(File file) {
+        if (file == null || !file.exists()) return 0;
+        if (file.isFile()) return file.length();
+        long total = 0;
+        File[] children = file.listFiles();
+        if (children != null) for (File child : children) total += folderSize(child);
+        return total;
+    }
+
+    private void deleteChildren(File dir) {
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (child.isDirectory()) deleteChildren(child);
+            child.delete();
+        }
+    }
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (downloadReceiver != null) unregisterReceiver(downloadReceiver);
+        worker.shutdownNow();
+        super.onDestroy();
+    }
+
+    private static class AppCandidate {
+        final String name;
+        final String packageName;
+        final long days;
+        AppCandidate(String name, String packageName, long days) {
+            this.name = name;
+            this.packageName = packageName;
+            this.days = days;
+        }
+    }
+
+    private static class FileCandidate {
+        final DocumentFile file;
+        final String name;
+        final long size;
+        final long age;
+        final String reason;
+        FileCandidate(DocumentFile file, String name, long size, long age, String reason) {
+            this.file = file;
+            this.name = name;
+            this.size = size;
+            this.age = age;
+            this.reason = reason;
+        }
+    }
+}
