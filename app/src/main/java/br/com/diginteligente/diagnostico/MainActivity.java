@@ -1,6 +1,7 @@
 package br.com.diginteligente.diagnostico;
 
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.AppOpsManager;
 import android.app.DownloadManager;
@@ -93,7 +94,7 @@ public class MainActivity extends Activity {
         nav.setGravity(Gravity.CENTER);
         nav.addView(navButton("Resumo", v -> showOverview()));
         nav.addView(navButton("Apps", v -> analyzeApps()));
-        nav.addView(navButton("Arquivos", v -> chooseFolder()));
+        nav.addView(navButton("Limpar", v -> showCleaner()));
         nav.addView(navButton("Seguranca", v -> analyzeSecurity()));
         root.addView(nav);
 
@@ -140,6 +141,23 @@ public class MainActivity extends Activity {
         addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
         addSecondaryAction("Verificar atualizacoes", v -> checkForUpdates(true));
         checkForUpdates(false);
+    }
+
+    private void showCleaner() {
+        clear("Limpeza inteligente");
+        long cache = folderSize(getCacheDir()) + folderSize(getCodeCacheDir()) + folderSize(getExternalCacheDir());
+        ActivityManager manager = (ActivityManager) getSystemService(ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo memory = new ActivityManager.MemoryInfo();
+        manager.getMemoryInfo(memory);
+        long usedRam = memory.totalMem - memory.availMem;
+
+        addMetricRow("Temporarios do DIG", format(cache), "Memoria disponivel", format(memory.availMem));
+        addInfo("RAM em uso: " + format(usedRam) + " de " + format(memory.totalMem) + ". O Android libera memoria automaticamente quando outro aplicativo precisa.");
+        addAction("Limpar temporarios do DIG", v -> confirmOwnCache());
+        addAction("Analisar Downloads, SD ou USB", v -> chooseFolder());
+        addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
+        addSecondaryAction("Revisar aplicativos em execucao", v -> startActivity(new Intent(Settings.ACTION_APPLICATION_SETTINGS)));
+        addWarning("Por seguranca, o Android nao permite apagar o cache privado ou encerrar outros aplicativos diretamente. Use Detalhes do app para limpar um aplicativo especifico.");
     }
 
     private void checkForUpdates(boolean userRequested) {
@@ -360,6 +378,17 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 busy(false, files.size() + " arquivos para revisar");
                 if (files.isEmpty()) addInfo("Nenhum arquivo grande, antigo ou temporario foi encontrado nesta pasta.");
+                long safeBytes = 0;
+                int safeCount = 0;
+                for (FileCandidate f : files) {
+                    if (f.safeToClean) { safeBytes += f.size; safeCount++; }
+                }
+                if (safeCount > 0) {
+                    final long cleanBytes = safeBytes;
+                    final int cleanCount = safeCount;
+                    addAction("Limpar " + cleanCount + " residuos seguros (" + format(cleanBytes) + ")",
+                            v -> confirmSafeCleanup(uri, files, cleanCount, cleanBytes));
+                }
                 for (FileCandidate f : files) addFileCandidate(f);
             });
         });
@@ -378,9 +407,10 @@ public class MainActivity extends Activity {
                 String lower = name.toLowerCase(Locale.ROOT);
                 long age = file.lastModified() > 0 ? (System.currentTimeMillis() - file.lastModified()) / DAY : 0;
                 boolean temporary = lower.endsWith(".tmp") || lower.endsWith(".log") || lower.endsWith(".bak") || lower.endsWith(".apk");
+                boolean safeToClean = (lower.endsWith(".tmp") && age >= 7) || (lower.endsWith(".log") && age >= 30);
                 if (file.length() >= LARGE_FILE || temporary || age >= 365) {
                     String reason = file.length() >= LARGE_FILE ? "Arquivo grande" : temporary ? "Possivel residuo" : "Arquivo antigo";
-                    output.add(new FileCandidate(file, name, file.length(), age, reason));
+                    output.add(new FileCandidate(file, name, file.length(), age, reason, safeToClean));
                 }
             }
         }
@@ -402,6 +432,25 @@ public class MainActivity extends Activity {
                 }).show());
         card.addView(remove);
         content.addView(card);
+    }
+
+    private void confirmSafeCleanup(Uri uri, List<FileCandidate> files, int count, long bytes) {
+        new AlertDialog.Builder(this)
+                .setTitle("Limpar residuos seguros?")
+                .setMessage(count + " arquivos temporarios e logs antigos serao excluidos, liberando ate " + format(bytes) + ". Fotos, documentos, APKs e backups nao entram nesta limpeza.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("Limpar", (d, w) -> {
+                    busy(true, "Limpando residuos...");
+                    worker.execute(() -> {
+                        int removed = 0;
+                        for (FileCandidate file : files) if (file.safeToClean && file.file.delete()) removed++;
+                        final int totalRemoved = removed;
+                        runOnUiThread(() -> {
+                            Toast.makeText(this, totalRemoved + " residuos removidos", Toast.LENGTH_LONG).show();
+                            scanFolder(uri);
+                        });
+                    });
+                }).show();
     }
 
     private void analyzeSecurity() {
@@ -437,7 +486,9 @@ public class MainActivity extends Activity {
                 .setNegativeButton("Cancelar", null)
                 .setPositiveButton("Limpar", (d, w) -> {
                     deleteChildren(getCacheDir());
-                    showOverview();
+                    deleteChildren(getCodeCacheDir());
+                    deleteChildren(getExternalCacheDir());
+                    showCleaner();
                 }).show();
     }
 
@@ -636,6 +687,7 @@ public class MainActivity extends Activity {
     }
 
     private void deleteChildren(File dir) {
+        if (dir == null || !dir.exists()) return;
         File[] children = dir.listFiles();
         if (children == null) return;
         for (File child : children) {
@@ -678,12 +730,14 @@ public class MainActivity extends Activity {
         final long size;
         final long age;
         final String reason;
-        FileCandidate(DocumentFile file, String name, long size, long age, String reason) {
+        final boolean safeToClean;
+        FileCandidate(DocumentFile file, String name, long size, long age, String reason, boolean safeToClean) {
             this.file = file;
             this.name = name;
             this.size = size;
             this.age = age;
             this.reason = reason;
+            this.safeToClean = safeToClean;
         }
     }
 }
