@@ -15,6 +15,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
@@ -74,20 +75,21 @@ public class MainActivity extends Activity {
     private void buildScreen() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(244, 247, 246));
+        root.setBackgroundColor(Color.rgb(246, 248, 250));
 
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.setPadding(dp(20), dp(20), dp(20), dp(16));
-        header.setBackgroundColor(Color.rgb(18, 59, 66));
-        TextView title = text("DIG Diagnostico", 24, Color.WHITE, true);
-        TextView subtitle = text("Analise segura do seu Android", 14, Color.rgb(195, 224, 218), false);
+        header.setPadding(dp(22), dp(24), dp(22), dp(20));
+        header.setBackground(rounded(Color.rgb(20, 48, 58), 0, 0));
+        TextView title = text("DIG Diagnostico", 26, Color.WHITE, true);
+        TextView subtitle = text("Protecao e desempenho do seu aparelho", 14, Color.rgb(183, 221, 214), false);
         header.addView(title);
         header.addView(subtitle);
         root.addView(header);
 
         LinearLayout nav = new LinearLayout(this);
-        nav.setPadding(dp(8), dp(8), dp(8), dp(8));
+        nav.setPadding(dp(10), dp(10), dp(10), dp(8));
+        nav.setBackgroundColor(Color.WHITE);
         nav.setGravity(Gravity.CENTER);
         nav.addView(navButton("Resumo", v -> showOverview()));
         nav.addView(navButton("Apps", v -> analyzeApps()));
@@ -107,29 +109,37 @@ public class MainActivity extends Activity {
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
 
-        status = text("Nenhuma alteracao e feita sem sua confirmacao.", 12, Color.DKGRAY, false);
+        status = text("Protecao ativa: nenhuma exclusao automatica.", 12, Color.rgb(75, 88, 92), false);
         status.setPadding(dp(16), dp(10), dp(16), dp(10));
         root.addView(status);
         setContentView(root);
     }
 
     private void showOverview() {
-        clear("Visao geral");
+        clear("Saude do aparelho");
         StatFs fs = new StatFs(Environment.getDataDirectory().getPath());
         long total = fs.getTotalBytes();
         long free = fs.getAvailableBytes();
         long used = total - free;
-        addMetric("Armazenamento usado", format(used) + " de " + format(total));
-        addMetric("Espaco disponivel", format(free));
         int installed = getPackageManager().getInstalledApplications(0).size();
-        addMetric("Aplicativos encontrados", String.valueOf(installed));
-
         long ownCache = folderSize(getCacheDir());
-        addMetric("Cache deste diagnostico", format(ownCache));
-        addAction("Limpar somente este cache", v -> confirmOwnCache());
-        addAction("Abrir gerenciador de armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
-        addAction("Verificar atualizacoes", v -> checkForUpdates(true));
-        addInfo("O Android protege os dados dos outros aplicativos. Este diagnostico orienta a limpeza usando as telas oficiais do sistema.");
+        int freePercent = total == 0 ? 0 : (int) ((free * 100L) / total);
+        int health = Math.max(35, Math.min(100, 70 + Math.min(25, freePercent) - (ownCache > 100L * 1024L * 1024L ? 5 : 0)));
+        addHealthCard(health, freePercent);
+        addMetricRow("Armazenamento", format(used) + " usados", "Livre", format(free));
+        addMetricRow("Aplicativos", String.valueOf(installed), "Versao", BuildConfig.VERSION_NAME);
+
+        TextView next = text("ACOES RECOMENDADAS", 12, Color.rgb(83, 96, 101), true);
+        next.setPadding(dp(2), dp(14), 0, dp(8));
+        content.addView(next);
+        if (freePercent < 15) addWarning("Pouco espaco livre. Analise Downloads, videos e arquivos grandes primeiro.");
+        else addInfo("O armazenamento tem uma margem livre adequada. Uma analise de arquivos pode encontrar itens antigos.");
+        addAction("Analisar aplicativos agora", v -> analyzeApps());
+        addAction("Analisar pasta, SD ou USB", v -> chooseFolder());
+        addAction("Verificar seguranca", v -> analyzeSecurity());
+        addSecondaryAction("Gerenciar armazenamento", v -> startActivity(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)));
+        addSecondaryAction("Verificar atualizacoes", v -> checkForUpdates(true));
+        checkForUpdates(false);
     }
 
     private void checkForUpdates(boolean userRequested) {
@@ -248,48 +258,67 @@ public class MainActivity extends Activity {
     }
 
     private void analyzeApps() {
-        clear("Aplicativos pouco usados");
-        if (!hasUsageAccess()) {
-            addWarning("Permita o Acesso ao uso para identificar aplicativos que nao sao utilizados ha muito tempo.");
-            addAction("Conceder acesso ao uso", v -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)));
-            return;
+        clear("Analise de aplicativos");
+        boolean advanced = hasUsageAccess();
+        addInfo(advanced ? "Analise avancada ativa: tempo sem uso, instalacao e tamanho do aplicativo."
+                : "Analise padrao ativa: tamanho, idade e situacao dos aplicativos. O acesso avancado e opcional.");
+        if (!advanced) {
+            addSecondaryAction("Ativar analise avancada", v -> showRestrictedAccessHelp());
         }
-        busy(true, "Analisando aplicativos...");
+        busy(true, "Classificando aplicativos...");
         worker.execute(() -> {
-            List<AppCandidate> candidates = findUnusedApps();
+            List<AppCandidate> candidates = findAppCandidates(advanced);
             runOnUiThread(() -> {
                 busy(false, candidates.size() + " sugestoes encontradas");
-                if (candidates.isEmpty()) addInfo("Nenhum aplicativo pouco usado foi identificado.");
+                if (candidates.isEmpty()) addInfo("Nenhum aplicativo precisa de revisao neste momento.");
                 for (AppCandidate app : candidates) addAppCandidate(app);
             });
         });
     }
 
-    private List<AppCandidate> findUnusedApps() {
+    private List<AppCandidate> findAppCandidates(boolean advanced) {
         long now = System.currentTimeMillis();
         long start = now - 365L * DAY;
-        UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
         Map<String, UsageStats> usage = new HashMap<>();
-        for (UsageStats stat : usm.queryUsageStats(UsageStatsManager.INTERVAL_YEARLY, start, now)) {
-            UsageStats old = usage.get(stat.getPackageName());
-            if (old == null || stat.getLastTimeUsed() > old.getLastTimeUsed()) usage.put(stat.getPackageName(), stat);
+        if (advanced) {
+            UsageStatsManager usm = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
+            for (UsageStats stat : usm.queryUsageStats(UsageStatsManager.INTERVAL_YEARLY, start, now)) {
+                UsageStats old = usage.get(stat.getPackageName());
+                if (old == null || stat.getLastTimeUsed() > old.getLastTimeUsed()) usage.put(stat.getPackageName(), stat);
+            }
         }
         List<AppCandidate> result = new ArrayList<>();
         PackageManager pm = getPackageManager();
         for (ApplicationInfo ai : pm.getInstalledApplications(0)) {
             if ((ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0 || ai.packageName.equals(getPackageName())) continue;
-            UsageStats stat = usage.get(ai.packageName);
-            long last = stat == null ? 0 : stat.getLastTimeUsed();
-            long days = last == 0 ? 9999 : (now - last) / DAY;
-            if (days >= 90) result.add(new AppCandidate(ai.loadLabel(pm).toString(), ai.packageName, days));
+            long apkSize = new File(ai.sourceDir).length();
+            long days = 0;
+            String reason;
+            int priority = 0;
+            if (advanced) {
+                UsageStats stat = usage.get(ai.packageName);
+                long last = stat == null ? 0 : stat.getLastTimeUsed();
+                days = last == 0 ? 9999 : (now - last) / DAY;
+                if (days >= 180) { reason = days > 3000 ? "Sem uso registrado" : "Sem uso ha " + days + " dias"; priority += 3; }
+                else if (days >= 90) { reason = "Pouco usado: " + days + " dias"; priority += 2; }
+                else continue;
+            } else {
+                try {
+                    PackageInfo pi = pm.getPackageInfo(ai.packageName, 0);
+                    days = (now - pi.lastUpdateTime) / DAY;
+                } catch (Exception ignored) { days = 0; }
+                if (apkSize >= 150L * 1024L * 1024L) { reason = "Aplicativo grande para revisar"; priority += 2; }
+                else if (days >= 365) { reason = "Sem atualizacao ha " + days + " dias"; priority += 1; }
+                else continue;
+            }
+            result.add(new AppCandidate(ai.loadLabel(pm).toString(), ai.packageName, days, apkSize, reason, priority));
         }
-        result.sort(Comparator.comparingLong((AppCandidate a) -> a.days).reversed());
+        result.sort(Comparator.comparingInt((AppCandidate a) -> a.priority).reversed().thenComparingLong(a -> a.size).reversed());
         return result;
     }
 
     private void addAppCandidate(AppCandidate app) {
-        String age = app.days > 3000 ? "Sem uso registrado" : "Nao usado ha " + app.days + " dias";
-        LinearLayout card = card(app.name, age);
+        LinearLayout card = card(app.name, app.reason + " | " + format(app.size));
         Button details = smallButton("Detalhes");
         details.setOnClickListener(v -> openAppDetails(app.packageName));
         Button uninstall = smallButton("Desinstalar");
@@ -425,6 +454,16 @@ public class MainActivity extends Activity {
         return ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName()) == AppOpsManager.MODE_ALLOWED;
     }
 
+    private void showRestrictedAccessHelp() {
+        new AlertDialog.Builder(this)
+                .setTitle("Analise avancada opcional")
+                .setMessage("Em alguns aparelhos, o Android bloqueia esta permissao para apps instalados por APK. Primeiro abra os detalhes do DIG Diagnostico e, no menu superior, escolha Permitir configuracoes restritas. Depois volte e ative Acesso ao uso.\n\nSem isso, a analise padrao continua funcionando normalmente.")
+                .setNegativeButton("Continuar sem acesso", null)
+                .setNeutralButton("Acesso ao uso", (d, w) -> startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)))
+                .setPositiveButton("Abrir detalhes do app", (d, w) -> openAppDetails(getPackageName()))
+                .show();
+    }
+
     private void openAppDetails(String packageName) {
         startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + packageName)));
     }
@@ -446,6 +485,44 @@ public class MainActivity extends Activity {
         content.addView(card(label, value));
     }
 
+    private void addHealthCard(int health, int freePercent) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(18), dp(18), dp(18), dp(18));
+        panel.setBackground(rounded(Color.rgb(224, 244, 239), 12, Color.rgb(144, 204, 191)));
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.addView(text(String.valueOf(health), 44, Color.rgb(8, 102, 85), true));
+        top.addView(text("  Nota de saude\n  " + (health >= 85 ? "Aparelho em bom estado" : health >= 65 ? "Alguns pontos para revisar" : "Atencao recomendada"), 15, Color.rgb(24, 70, 66), true));
+        panel.addView(top);
+        ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        bar.setIndeterminate(false);
+        bar.setMax(100);
+        bar.setProgress(health);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8));
+        bp.setMargins(0, dp(14), 0, dp(8));
+        panel.addView(bar, bp);
+        panel.addView(text(freePercent + "% do armazenamento esta livre", 13, Color.rgb(52, 86, 84), false));
+        content.addView(panel, spacedParams());
+    }
+
+    private void addMetricRow(String leftTitle, String leftValue, String rightTitle, String rightValue) {
+        LinearLayout row = new LinearLayout(this);
+        row.setBackground(rounded(Color.WHITE, 10, Color.rgb(224, 229, 232)));
+        row.setPadding(dp(14), dp(12), dp(14), dp(12));
+        row.addView(metricColumn(leftTitle, leftValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(metricColumn(rightTitle, rightValue), new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        content.addView(row, spacedParams());
+    }
+
+    private LinearLayout metricColumn(String title, String value) {
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.addView(text(title, 12, Color.rgb(103, 113, 117), false));
+        column.addView(text(value, 16, Color.rgb(31, 49, 54), true));
+        return column;
+    }
+
     private void addInfo(String message) {
         TextView view = text(message, 14, Color.rgb(55, 65, 67), false);
         view.setPadding(dp(14), dp(14), dp(14), dp(14));
@@ -465,6 +542,19 @@ public class MainActivity extends Activity {
         Button button = new Button(this);
         button.setText(label);
         button.setAllCaps(false);
+        button.setTextColor(Color.WHITE);
+        button.setBackground(rounded(Color.rgb(8, 126, 109), 9, 0));
+        button.setPadding(dp(14), dp(10), dp(14), dp(10));
+        button.setOnClickListener(action);
+        content.addView(button, spacedParams());
+    }
+
+    private void addSecondaryAction(String label, View.OnClickListener action) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextColor(Color.rgb(25, 71, 78));
+        button.setBackground(rounded(Color.WHITE, 9, Color.rgb(198, 211, 214)));
         button.setOnClickListener(action);
         content.addView(button, spacedParams());
     }
@@ -473,7 +563,7 @@ public class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
         card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        card.setBackgroundColor(Color.WHITE);
+        card.setBackground(rounded(Color.WHITE, 10, Color.rgb(225, 230, 232)));
         card.addView(text(title, 16, Color.rgb(25, 42, 45), true));
         TextView d = text(detail, 13, Color.rgb(80, 92, 94), false);
         d.setPadding(0, dp(4), 0, dp(4));
@@ -485,12 +575,14 @@ public class MainActivity extends Activity {
     private Button navButton(String label, View.OnClickListener listener) {
         Button b = new Button(this);
         b.setText(label);
-        b.setTextSize(12);
+        b.setTextSize(11);
+        b.setTextColor(Color.rgb(38, 66, 71));
         b.setAllCaps(false);
         b.setOnClickListener(listener);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
-        b.setPadding(dp(4), 0, dp(4), 0);
+        b.setPadding(dp(3), 0, dp(3), 0);
+        b.setBackground(rounded(Color.rgb(240, 245, 245), 8, 0));
         b.setLayoutParams(new LinearLayout.LayoutParams(0, dp(46), 1));
         return b;
     }
@@ -509,6 +601,14 @@ public class MainActivity extends Activity {
         view.setTextColor(color);
         if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return view;
+    }
+
+    private GradientDrawable rounded(int fill, int radius, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radius));
+        if (stroke != 0) drawable.setStroke(dp(1), stroke);
+        return drawable;
     }
 
     private LinearLayout.LayoutParams spacedParams() {
@@ -559,10 +659,16 @@ public class MainActivity extends Activity {
         final String name;
         final String packageName;
         final long days;
-        AppCandidate(String name, String packageName, long days) {
+        final long size;
+        final String reason;
+        final int priority;
+        AppCandidate(String name, String packageName, long days, long size, String reason, int priority) {
             this.name = name;
             this.packageName = packageName;
             this.days = days;
+            this.size = size;
+            this.reason = reason;
+            this.priority = priority;
         }
     }
 
